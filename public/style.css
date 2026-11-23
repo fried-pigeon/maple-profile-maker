@@ -8,19 +8,19 @@
   --accent-ink: #ffffff;
   --radius: 16px;
   font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  /* The card preview and theme colors must look exactly like the saved image, so the
-     page never goes dark: "only light" opts out of browsers' forced dark modes. */
-  color-scheme: only light;
+  /* The preview and theme colors must match the saved image, so the page never goes dark.
+     Forced dark modes (Samsung Internet in particular) skip a page only if it declares dark
+     support, so the root says "light dark" (with the matching <meta>) and every color below
+     is explicit and stays light even when the system prefers dark. */
+  color-scheme: light dark;
 }
-/* Some browsers (e.g. Samsung Internet's dark mode) force-darken any page that has no
-   dark-mode styles. This block "supports" dark mode by keeping the same light colors. */
 @media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #f5f7fb; --card: #ffffff; --ink: #1d2433; --sub: #687089; --line: #e3e7ef;
-    color-scheme: only light;
-  }
+  /* same light palette on purpose */
+  :root { --bg: #f5f7fb; --card: #ffffff; --ink: #1d2433; --sub: #687089; --line: #e3e7ef; }
   body { background: var(--bg); color: var(--ink); }
 }
+/* Native controls follow the color scheme of their own element: keep them light. */
+input, select, button, textarea, option, canvas, .stage, .swatches { color-scheme: light; }
 * { box-sizing: border-box; }
 body {
   margin: 0;

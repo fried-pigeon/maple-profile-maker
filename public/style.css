@@ -8,7 +8,18 @@
   --accent-ink: #ffffff;
   --radius: 16px;
   font-family: "Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
-  color-scheme: light;
+  /* The card preview and theme colors must look exactly like the saved image, so the
+     page never goes dark: "only light" opts out of browsers' forced dark modes. */
+  color-scheme: only light;
+}
+/* Some browsers (e.g. Samsung Internet's dark mode) force-darken any page that has no
+   dark-mode styles. This block "supports" dark mode by keeping the same light colors. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #f5f7fb; --card: #ffffff; --ink: #1d2433; --sub: #687089; --line: #e3e7ef;
+    color-scheme: only light;
+  }
+  body { background: var(--bg); color: var(--ink); }
 }
 * { box-sizing: border-box; }
 body {

@@ -1,14 +1,13 @@
 // GET /api/image?url=<character_image URL>&action=A00&emotion=E00&wmotion=W00
 // Same-origin proxy for the character look image, so the browser canvas can read
 // pixels (auto bust framing) and export PNG without CORS taint.
-import { IMAGE_PREFIX, json, withEdgeCache } from "../../lib/nexon.js";
+import { IMAGE_PREFIX, json, withEdgeCache } from "../nexon.js";
 
 const ACTION_RE = /^A(0\d|[1-3]\d|4[01])(\.\d)?$/;
 const EMOTION_RE = /^E(0\d|1\d|2[0-4])(\.\d)?$/;
 const WMOTION_RE = /^W0[0-4]$/;
 
-export async function onRequestGet(context) {
-  const { request, env } = context;
+export async function handleImage(request, env, ctx) {
   const q = new URL(request.url).searchParams;
   const src = q.get("url") || "";
   if (!src.startsWith(IMAGE_PREFIX) || /[?#]/.test(src) || src.length > 4096) {
@@ -21,7 +20,7 @@ export async function onRequestGet(context) {
     if (v && re.test(v)) upstream.searchParams.set(key, v);
   }
 
-  return withEdgeCache(context, 3600, async () => {
+  return withEdgeCache(request, ctx, 3600, async () => {
     const headers = {};
     if (env.NEXON_API_KEY) headers["x-nxopen-api-key"] = env.NEXON_API_KEY;
     const res = await fetch(upstream, { headers });

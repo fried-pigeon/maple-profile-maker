@@ -1,6 +1,15 @@
-name = "maple-thumb-maker"
-pages_build_output_dir = "public"
+# The name must match the Worker name in the Cloudflare dashboard (Workers Builds).
+name = "maple-profile-maker"
+main = "src/worker.js"
 compatibility_date = "2025-11-01"
 
+# Static site. Requests that don't match a file fall through to src/worker.js (/api/*).
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[observability]
+enabled = true
+
 # NEXON_API_KEY is a secret. Locally: put it in .dev.vars
-# On Cloudflare: Pages project > Settings > Variables and Secrets (type: Secret)
+# On Cloudflare: Worker > Settings > Variables and Secrets (type: Secret)

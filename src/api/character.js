@@ -1,6 +1,6 @@
 // GET /api/character?name=<캐릭터명>
 // Looks up the ocid, then fetches basic info + stat (전투력) + union + popularity.
-import { nexonGet, json, errorResponse, withEdgeCache, NexonError } from "../../lib/nexon.js";
+import { nexonGet, json, errorResponse, withEdgeCache, NexonError } from "../nexon.js";
 
 const LIBERATION = {
   "0": null,
@@ -14,14 +14,13 @@ function pickStat(stat, name) {
   return row ? row.stat_value : null;
 }
 
-export async function onRequestGet(context) {
-  const { request, env } = context;
+export async function handleCharacter(request, env, ctx) {
   const name = (new URL(request.url).searchParams.get("name") || "").trim();
   if (!name || name.length > 12) {
     return json({ error: { code: "BAD_NAME", message: "캐릭터 이름을 확인해주세요." } }, 400);
   }
 
-  return withEdgeCache(context, 600, async () => {
+  return withEdgeCache(request, ctx, 600, async () => {
     try {
       const { ocid } = await nexonGet(env, "/maplestory/v1/id", { character_name: name });
       if (!ocid) throw new NexonError("OPENAPI00003", 404);

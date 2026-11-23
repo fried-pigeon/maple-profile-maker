@@ -1,4 +1,4 @@
-// Shared helpers for calling the NEXON Open API (MapleStory) from Pages Functions.
+// Shared helpers for calling the NEXON Open API (MapleStory) from the Worker.
 
 export const API_BASE = "https://open.api.nexon.com";
 export const IMAGE_PREFIX = "https://open.api.nexon.com/static/maplestory/character/look/";
@@ -73,8 +73,7 @@ export function errorResponse(err) {
 }
 
 // Wrap a handler with the Workers edge cache (caches.default) to save API quota.
-export async function withEdgeCache(context, ttlSeconds, handler) {
-  const { request } = context;
+export async function withEdgeCache(request, ctx, ttlSeconds, handler) {
   const cache = typeof caches !== "undefined" ? caches.default : null;
   const cacheKey = new Request(new URL(request.url).toString(), { method: "GET" });
   if (cache) {
@@ -85,7 +84,7 @@ export async function withEdgeCache(context, ttlSeconds, handler) {
   if (cache && res.status === 200) {
     const toCache = new Response(res.clone().body, res);
     toCache.headers.set("cache-control", `public, max-age=${ttlSeconds}`);
-    context.waitUntil(cache.put(cacheKey, toCache));
+    ctx.waitUntil(cache.put(cacheKey, toCache));
   }
   return res;
 }

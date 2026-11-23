@@ -1,4 +1,4 @@
-import { CARD_SIZE, THEMES, FONT, KAKAO_MASK_N, PORTRAIT_ZONE, drawCard, autoFrame, squirclePath } from "./card.js";
+import { CARD_SIZE, THEMES, FONT, PORTRAIT_ZONE, drawCard, autoFrame } from "./card.js";
 
 const $ = (id) => document.getElementById(id);
 const S = CARD_SIZE;
@@ -18,12 +18,10 @@ const state = {
     flip: false,
   },
   pose: { action: "A00", emotion: "E00", noWeapon: false },
-  showGuide: store.get("showMask", false),
 };
 
 const cardCanvas = $("card");
 const ctx = cardCanvas.getContext("2d");
-const guideCtx = $("guide").getContext("2d");
 
 // ---- rendering --------------------------------------------------------------
 
@@ -32,50 +30,8 @@ function render() {
   cancelAnimationFrame(raf);
   raf = requestAnimationFrame(() => {
     drawCard(ctx, state);
-    drawGuide();
-    drawIcons();
     $("zoomOut").textContent = state.frame ? `${state.frame.zoom}배` : "";
   });
-}
-
-// Dim what KakaoTalk's icon mask hides (the four corners).
-function drawGuide() {
-  guideCtx.clearRect(0, 0, S, S);
-  if (!state.showGuide) return;
-  const r = S / 2;
-  guideCtx.save();
-  guideCtx.fillStyle = "rgba(20, 24, 36, 0.45)";
-  guideCtx.fillRect(0, 0, S, S);
-  // punch out the visible icon area
-  guideCtx.globalCompositeOperation = "destination-out";
-  squirclePath(guideCtx, S / 2, S / 2, r, KAKAO_MASK_N);
-  guideCtx.fillStyle = "#000"; // must be opaque to erase fully
-  guideCtx.fill();
-  guideCtx.globalCompositeOperation = "source-over";
-  squirclePath(guideCtx, S / 2, S / 2, r - 2, KAKAO_MASK_N);
-  guideCtx.setLineDash([18, 12]);
-  guideCtx.lineWidth = 4;
-  guideCtx.strokeStyle = "rgba(255,255,255,0.95)";
-  guideCtx.stroke();
-  guideCtx.restore();
-}
-
-// KakaoTalk icon = the whole image under the superellipse mask.
-function drawIcons() {
-  for (const id of ["icon1", "icon2", "icon3"]) {
-    const c = $(id);
-    const g = c.getContext("2d");
-    const n = c.width;
-    g.clearRect(0, 0, n, n);
-    g.save();
-    squirclePath(g, n / 2, n / 2, n / 2, KAKAO_MASK_N);
-    g.clip();
-    g.imageSmoothingEnabled = true;
-    g.imageSmoothingQuality = "high";
-    g.drawImage(cardCanvas, 0, 0, S, S, 0, 0, n, n);
-    g.restore();
-  }
-  for (const el of document.querySelectorAll(".fname")) el.textContent = state.data?.name || "캐릭터";
 }
 
 // ---- data loading -----------------------------------------------------------
@@ -225,9 +181,6 @@ $("zoom").addEventListener("input", (e) => {
 
 $("shape").value = state.opt.shape;
 $("shape").addEventListener("change", (e) => { state.opt.shape = e.target.value; store.set("shape", e.target.value); render(); });
-
-$("showGuide").checked = state.showGuide;
-$("showGuide").addEventListener("change", (e) => { state.showGuide = e.target.checked; store.set("showMask", e.target.checked); render(); });
 
 // drag to pan, wheel to zoom
 const stage = $("stage");

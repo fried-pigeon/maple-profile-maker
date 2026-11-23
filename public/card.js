@@ -90,27 +90,31 @@ export function autoFrame(sprite, zoneSize) {
   const data = g.getImageData(0, 0, w, h).data;
   const alpha = (x, y) => data[(y * w + x) * 4 + 3];
 
-  // Rows with enough opaque pixels count as "body" (ignores stray effect pixels).
+  // Rows with enough solid pixels count as "body" (ignores faint effect pixels).
+  const SOLID = 200;
   const rowCount = new Array(h).fill(0);
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (alpha(x, y) > 40) rowCount[y]++;
-  let top = rowCount.findIndex((n) => n >= 2);
-  let bottom = h - 1 - [...rowCount].reverse().findIndex((n) => n >= 2);
-  if (top < 0) return { zoom: Math.round(zoneSize / 48), cx: w / 2, cy: h / 2 };
-  const height = Math.max(20, bottom - top + 1);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) if (alpha(x, y) > SOLID) rowCount[y]++;
+  const top = rowCount.findIndex((n) => n >= 2);
+  if (top < 0) return { zoom: Math.round(zoneSize / 60), cx: w / 2, cy: h / 2 };
+  const bottom = h - 1 - [...rowCount].reverse().findIndex((n) => n >= 2); // feet
 
-  // Horizontal center of the head area: weighted mean x over the upper 45%.
-  const headEnd = top + Math.round(height * 0.45);
-  let sx = 0, sn = 0;
-  for (let y = top; y <= headEnd; y++) {
-    for (let x = 0; x < w; x++) if (alpha(x, y) > 40) { sx += x; sn++; }
+  // Characters are ~66-80px from feet to head top. Tall hats, umbrellas or ears would
+  // make the head too small, so clamp the reference height and anchor on the feet.
+  const ref = Math.min(80, Math.max(66, bottom - top + 1));
+  const headTop = bottom + 1 - ref;
+
+  // Horizontal center: median x of solid pixels in the face band (robust to weapons).
+  const xs = [];
+  for (let y = Math.max(0, Math.round(bottom - ref * 0.85)); y <= Math.round(bottom - ref * 0.45); y++) {
+    for (let x = 0; x < w; x++) if (alpha(x, y) > SOLID) xs.push(x);
   }
-  const cx = sn ? sx / sn + 0.5 : w / 2;
+  xs.sort((a, b) => a - b);
+  const cx = xs.length ? xs[xs.length >> 1] + 0.5 : w / 2;
 
-  // Show roughly the top 62% of the character (head + chest) in ~86% of the zone.
-  const span = height * 0.62;
-  let zoom = Math.max(2, Math.round((zoneSize * 0.86) / span));
-  // Put the top of the head ~9% below the zone's top edge.
-  const cy = top - 0.5 + (0.5 - 0.09) * (zoneSize / zoom);
+  // Show roughly the top 80% of the character (head + upper body) in ~90% of the zone.
+  const zoom = Math.max(2, Math.round((zoneSize * 0.9) / (ref * 0.8)));
+  // Put the top of the head ~6% below the zone's top edge.
+  const cy = headTop + (0.5 - 0.06) * (zoneSize / zoom);
   return { zoom, cx, cy };
 }
 

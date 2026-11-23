@@ -11,7 +11,7 @@ export async function onRequestGet(context) {
   const { request, env } = context;
   const q = new URL(request.url).searchParams;
   const src = q.get("url") || "";
-  if (!src.startsWith(IMAGE_PREFIX) || /[?#]/.test(src) || src.length > 2000) {
+  if (!src.startsWith(IMAGE_PREFIX) || /[?#]/.test(src) || src.length > 4096) {
     return json({ error: { code: "BAD_URL", message: "잘못된 이미지 주소입니다." } }, 400);
   }
 

@@ -196,13 +196,6 @@ export function drawCard(ctx, { data, sprite, frame, opt }) {
   pg.addColorStop(1, t.panel[1]);
   ctx.fillStyle = pg;
   ctx.fillRect(0, 0, S, S);
-  // halo ring behind the head
-  ctx.strokeStyle = hexA(t.accent, 0.1);
-  ctx.lineWidth = 26;
-  ctx.beginPath();
-  ctx.arc(C, C - zone * 0.06, zone * 0.36, 0, Math.PI * 2);
-  ctx.stroke();
-
   if (sprite && frame) {
     ctx.imageSmoothingEnabled = false;
     const { zoom, cx, cy } = frame;

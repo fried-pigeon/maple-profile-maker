@@ -98,9 +98,10 @@ export function autoFrame(sprite, zoneSize) {
   if (top < 0) return { zoom: Math.round(zoneSize / 60), cx: w / 2, cy: h / 2 };
   const bottom = h - 1 - [...rowCount].reverse().findIndex((n) => n >= 2); // feet
 
-  // Characters are ~66-80px from feet to head top. Tall hats, umbrellas or ears would
-  // make the head too small, so clamp the reference height and anchor on the feet.
-  const ref = Math.min(80, Math.max(66, bottom - top + 1));
+  // A bare head is ~70-74px above the feet. Big hats, umbrellas or ears can reach 130px+,
+  // which would shrink and push down the face, so clamp the reference height and anchor
+  // on the feet: the face lands in the same place for everyone (tall headgear gets cropped).
+  const ref = Math.min(74, Math.max(66, bottom - top + 1));
   const headTop = bottom + 1 - ref;
 
   // Horizontal center: median x of solid pixels in the face band (robust to weapons).

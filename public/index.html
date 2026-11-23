@@ -17,6 +17,12 @@
     <h1>메이플 프사 생성기</h1>
   </header>
 
+  <div id="inapp" class="inapp" role="alert" hidden>
+    <p><b>앱 안의 브라우저에서는 이미지 저장이 안 될 수 있어요.</b>
+      <span id="inappHow">기본 브라우저에서 열면 지금 만든 카드 그대로 저장할 수 있어요.</span></p>
+    <button type="button" id="openExternal" class="primary">기본 브라우저로 열기</button>
+  </div>
+
   <form id="search" class="search" autocomplete="off">
     <input id="name" name="name" type="text" maxlength="12" placeholder="캐릭터 이름" aria-label="캐릭터 이름" required />
     <button type="submit" id="searchBtn">불러오기</button>

@@ -41,6 +41,18 @@ button {
 button:disabled { opacity: 0.5; cursor: default; }
 .search button, button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 
+.inapp {
+  max-width: 1100px; margin: 0 auto 12px; padding: 12px 14px; border-radius: 12px;
+  background: #fff4d6; border: 1.5px solid #f3c64b; color: #4a3a0a;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+}
+.inapp[hidden] { display: none; }
+.inapp p { margin: 0; flex: 1 1 240px; font-size: 14px; }
+.inapp b { display: block; }
+.inapp button { flex: none; min-height: 44px; }
+.inapp.flash { animation: inapp-flash 0.6s ease 2; }
+@keyframes inapp-flash { 50% { background: #ffe08a; } }
+
 .status { max-width: 1100px; margin: 8px auto 0; min-height: 1.5em; color: var(--sub); font-size: 14px; }
 .status.error { color: #d23c3c; }
 

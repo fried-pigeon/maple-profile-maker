@@ -1,4 +1,5 @@
 import { CARD_SIZE, THEMES, FONT, PORTRAIT_ZONE, drawCard, autoFrame } from "./card.js";
+import { detectInApp, externalOpenUrl } from "./inapp.js";
 
 const $ = (id) => document.getElementById(id);
 const S = CARD_SIZE;
@@ -99,6 +100,11 @@ async function search(name) {
     // The card still renders (text only) if the character image can't be loaded.
     const [spriteResult] = await Promise.allSettled([loadSprite(), ensureFonts(cardText(data))]);
     fit();
+    if (pendingFrame && state.frame) {
+      Object.assign(state.frame, pendingFrame);
+      $("zoom").value = state.frame.zoom;
+    }
+    pendingFrame = null;
     const summary = [data.name, data.world, data.level != null ? `Lv.${data.level}` : null, data.job]
       .filter(Boolean).join(" · ") + (data.demo ? " (데모)" : "");
     if (spriteResult.status === "rejected") {
@@ -125,6 +131,75 @@ function fit() {
   if (!state.sprite) return;
   state.frame = autoFrame(state.sprite, S * PORTRAIT_ZONE);
   $("zoom").value = state.frame.zoom;
+}
+
+// ---- card settings in the URL ---------------------------------------------------
+// Used to reopen the exact same card in another browser (e.g. leaving KakaoTalk's in-app
+// browser, which can't save images). localStorage doesn't carry over between browsers.
+let pendingFrame = null;
+
+function stateUrl() {
+  const u = new URL(location.origin + location.pathname);
+  if (state.data?.name && !state.data.demo) u.searchParams.set("name", state.data.name);
+  u.searchParams.set("t", state.opt.theme);
+  u.searchParams.set("s", state.opt.shape);
+  u.searchParams.set("a", state.pose.action);
+  u.searchParams.set("e", state.pose.emotion);
+  if (state.pose.noWeapon) u.searchParams.set("nw", "1");
+  if (state.opt.flip) u.searchParams.set("f", "1");
+  if (state.frame) {
+    u.searchParams.set("z", String(state.frame.zoom));
+    u.searchParams.set("x", state.frame.cx.toFixed(1));
+    u.searchParams.set("y", state.frame.cy.toFixed(1));
+  }
+  return u.toString();
+}
+
+function applyUrlState(p) {
+  if (THEMES[p.get("t")]) state.opt.theme = p.get("t");
+  if (["squircle", "circle"].includes(p.get("s"))) state.opt.shape = p.get("s");
+  const pick = (sel, v) => (v && [...sel.options].some((o) => o.value === v) ? v : null);
+  state.pose.action = pick($("action"), p.get("a")) ?? state.pose.action;
+  state.pose.emotion = pick($("emotion"), p.get("e")) ?? state.pose.emotion;
+  state.pose.noWeapon = p.get("nw") === "1";
+  state.opt.flip = p.get("f") === "1";
+  const z = Number(p.get("z")), x = Number(p.get("x")), y = Number(p.get("y"));
+  if (z >= 3 && z <= 40 && Number.isFinite(x) && Number.isFinite(y) && p.has("x") && p.has("y")) {
+    pendingFrame = { zoom: Math.round(z), cx: x, cy: y };
+  }
+  // reflect in the controls
+  $("action").value = state.pose.action;
+  $("emotion").value = state.pose.emotion;
+  $("noWeapon").checked = state.pose.noWeapon;
+  $("flip").checked = state.opt.flip;
+  $("shape").value = state.opt.shape;
+}
+
+// ---- in-app browsers (KakaoTalk etc.) -----------------------------------------------
+// ?inapp_test=kakao|line|other simulates an in-app browser (for testing on a PC).
+const inApp = ["kakao", "line", "other"].includes(new URLSearchParams(location.search).get("inapp_test"))
+  ? new URLSearchParams(location.search).get("inapp_test")
+  : detectInApp();
+function openInDefaultBrowser() {
+  const target = externalOpenUrl(inApp, stateUrl());
+  if (target) {
+    location.href = target;
+  } else {
+    // No scheme for this app: ask the user to use the app's own "open in browser" menu.
+    $("inappHow").textContent = "오른쪽 위(또는 아래) 메뉴에서 '다른 브라우저로 열기'를 눌러 주세요.";
+    $("inapp").classList.remove("flash");
+    void $("inapp").offsetWidth;
+    $("inapp").classList.add("flash");
+    $("inapp").scrollIntoView({ behavior: "smooth", block: "center" });
+  }
+}
+if (inApp) {
+  $("inapp").hidden = false;
+  if (!externalOpenUrl(inApp, location.href)) {
+    $("openExternal").hidden = true;
+    $("inappHow").textContent = "오른쪽 위(또는 아래) 메뉴에서 '다른 브라우저로 열기'를 눌러 주세요.";
+  }
+  $("openExternal").addEventListener("click", openInDefaultBrowser);
 }
 
 // ---- controls -----------------------------------------------------------------
@@ -255,6 +330,7 @@ function exportBlob() {
 const fileName = () => `maple-${state.data?.name || "card"}.png`;
 
 $("download").addEventListener("click", async () => {
+  if (inApp) return openInDefaultBrowser();
   const blob = await exportBlob();
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
@@ -279,6 +355,7 @@ if (canShareFiles) {
     shareBtn.parentElement.prepend(shareBtn);
   }
   shareBtn.addEventListener("click", async () => {
+    if (inApp) return openInDefaultBrowser();
     const blob = await exportBlob();
     try {
       await navigator.share({ files: [new File([blob], fileName(), { type: "image/png" })] });
@@ -320,9 +397,10 @@ function makeDemoSprite({ emotion, noWeapon }) {
 
 // ---- boot -------------------------------------------------------------------------
 
+const params = new URLSearchParams(location.search);
+applyUrlState(params);
 syncThemeButtons();
 render();
-const params = new URLSearchParams(location.search);
 if (params.has("demo")) {
   search("__demo__");
 } else if (params.get("name")) {

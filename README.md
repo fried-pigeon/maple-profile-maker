@@ -12,7 +12,7 @@
 public/            정적 사이트 (index.html, app.js, card.js, style.css) — Workers Static Assets로 제공
 src/worker.js      Worker 진입점: /api/* 라우팅, 나머지는 정적 파일
 src/api/
-  character.js     GET /api/character?name=  → ocid 조회 + basic/stat/union/popularity 합쳐서 반환
+  character.js     GET /api/character?name=  → ocid 조회 + basic/stat 합쳐서 반환
   image.js         GET /api/image?url=&action=&emotion=&wmotion=  → 캐릭터 외형 이미지 프록시
 src/nexon.js       넥슨 API 호출, 오류 메시지, 엣지 캐시 헬퍼
 wrangler.toml      Worker 설정 (name, main, assets)
@@ -54,5 +54,5 @@ npm run deploy
 ```
 
 ### 참고
-- 개발 단계 키는 초당 5회 / 일 1,000회 제한이 있습니다. 한 번 조회에 API 4회를 쓰며, 결과는 엣지에서 10분(이미지는 1시간) 캐시합니다. 실제 서비스 URL이 생기면 넥슨 개발자센터에서 서비스 단계 키를 새로 받아 교체하세요.
+- 개발 단계 키는 초당 5회 / 일 1,000회 제한이 있습니다. 한 번 조회에 API 3회(ocid, basic, stat)를 쓰며, 결과는 엣지에서 10분(이미지는 1시간) 캐시합니다. 실제 서비스 URL이 생기면 넥슨 개발자센터에서 서비스 단계 키를 새로 받아 교체하세요.
 - 데이터 출처 표기: "Data based on NEXON Open API".

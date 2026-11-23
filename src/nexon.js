@@ -38,7 +38,13 @@ export async function nexonGet(env, path, params = {}, { retries = 2 } = {}) {
     const res = await fetch(url, {
       headers: { "x-nxopen-api-key": env.NEXON_API_KEY, accept: "application/json" },
     });
-    if (res.ok) return res.json();
+    if (res.ok) {
+      try {
+        return await res.json();
+      } catch {
+        throw new NexonError("BAD_UPSTREAM", 502, "넥슨 API 응답 형식이 올바르지 않습니다.");
+      }
+    }
 
     let code = "HTTP_" + res.status;
     try {

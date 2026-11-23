@@ -26,6 +26,7 @@ const LIBERATION_STYLE = {
   genesis:  { colors: ["#ff6a3d", "#ffb347"], text: "#ffffff", glyph: "✦" },
   destiny:  { colors: ["#6a4cff", "#c06bff"], text: "#ffffff", glyph: "✦" },
   destiny2: { colors: ["#2b2f8f", "#b04cff"], text: "#ffe9a8", glyph: "✧" },
+  unknown:  { colors: ["#4a5468", "#8a93a8"], text: "#ffffff", glyph: "✦" },
 };
 
 export const FONT = '"Pretendard Variable", Pretendard, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif';
@@ -60,7 +61,8 @@ function roundRectPath(ctx, x, y, w, h, r) {
 // ---- formatting -----------------------------------------------------------
 
 export function formatKoreanNumber(value) {
-  const n = Math.floor(Number(value));
+  // tolerate "1,234" / " 1234 " style strings as well as numbers
+  const n = Math.floor(Number(String(value ?? "").replace(/[^\d.]/g, "")));
   if (!Number.isFinite(n) || n <= 0) return null;
   const eok = Math.floor(n / 1e8);
   const man = Math.floor((n % 1e8) / 1e4);
@@ -135,7 +137,9 @@ export function autoFrame(sprite, zoneSize) {
  *   p.data    character info (see /api/character)
  *   p.sprite  HTMLImageElement | HTMLCanvasElement (character look) or null
  *   p.frame   { zoom, cx, cy }
- *   p.opt     { theme, shape, flip, fields: {world, liberation, guild, combatPower, union, popularity, job} }
+ *   p.opt     { theme, shape, flip }
+ * Fixed layout: name (top), Lv + job (bottom), world / liberation / guild / 전투력 in the corners.
+ * Any missing value just leaves its slot empty.
  */
 export function drawCard(ctx, { data, sprite, frame, opt }) {
   const S = CARD_SIZE;
@@ -230,7 +234,6 @@ export function drawCard(ctx, { data, sprite, frame, opt }) {
   }
 
   // Text -------------------------------------------------------------------
-  const f = opt.fields || {};
   const edge = Math.max(26, S * 0.03);
 
   // Top center: character name on a pill that overlaps the panel edge.
@@ -251,7 +254,7 @@ export function drawCard(ctx, { data, sprite, frame, opt }) {
   // Bottom center: level + job.
   {
     const lv = `Lv.${data.level ?? "?"}`;
-    const job = f.job !== false && data.job ? data.job : "";
+    const job = data.job || "";
     let size = Math.min(46, band * 0.48 + 10);
     const maxW = S * 0.42; // keep the pill inside the icon mask
     const measure = () => {
@@ -288,24 +291,18 @@ export function drawCard(ctx, { data, sprite, frame, opt }) {
   // Corners ----------------------------------------------------------------
   // Each tag is sized to sit entirely inside the corner that KakaoTalk's icon mask hides,
   // so the icon stays clean and the info shows only in the full-size profile view.
-  if (f.world !== false && data.world) {
-    cornerTag(ctx, { corner: "tl", label: "WORLD", value: data.world, t });
+  if (data.world) cornerTag(ctx, { corner: "tl", label: "WORLD", value: String(data.world), t });
+  if (data.liberation) {
+    // Unknown keys (a tier added to the API later) fall back to a generic badge.
+    const key = LIBERATION_TAG[data.liberation.key] ? data.liberation.key : "unknown";
+    const lib = key === "unknown"
+      ? { label: "✦ 해방", value: data.liberation.tier ? `${data.liberation.tier}단계` : "달성" }
+      : LIBERATION_TAG[key];
+    cornerTag(ctx, { corner: "tr", ...lib, t, style: LIBERATION_STYLE[key] });
   }
-  if (f.liberation !== false && data.liberation) {
-    const lib = LIBERATION_TAG[data.liberation.key];
-    if (lib) cornerTag(ctx, { corner: "tr", ...lib, t, style: LIBERATION_STYLE[data.liberation.key] });
-  }
-
-  // bottom corners: first two enabled extras
-  const extras = [];
-  if (f.guild !== false && data.guild) extras.push({ label: "GUILD", value: data.guild });
-  if (f.combatPower !== false && formatKoreanNumber(data.combatPower))
-    extras.push({ label: "전투력", value: formatKoreanNumber(data.combatPower) });
-  if (f.union !== false && data.unionLevel) extras.push({ label: "UNION", value: Number(data.unionLevel).toLocaleString("ko-KR") });
-  if (f.popularity !== false && data.popularity != null) extras.push({ label: "인기도", value: Number(data.popularity).toLocaleString("ko-KR") });
-  const [bl, br] = extras;
-  if (bl) cornerTag(ctx, { corner: "bl", ...bl, t });
-  if (br) cornerTag(ctx, { corner: "br", ...br, t });
+  if (data.guild) cornerTag(ctx, { corner: "bl", label: "GUILD", value: String(data.guild), t });
+  const cp = formatKoreanNumber(data.combatPower);
+  if (cp) cornerTag(ctx, { corner: "br", label: "전투력", value: cp, t });
 
   ctx.restore();
 }

@@ -16,7 +16,6 @@ const state = {
     theme: store.get("theme", "sky"),
     shape: store.get("shape", "squircle"),
     flip: false,
-    fields: store.get("fields", { union: false, popularity: false }),
   },
   pose: { action: "A00", emotion: "E00", noWeapon: false },
   showGuide: store.get("showMask", false),
@@ -109,6 +108,7 @@ async function loadSprite() {
     state.sprite = makeDemoSprite(state.pose);
     return;
   }
+  if (!state.data.image) throw new Error("캐릭터 이미지 주소가 없습니다.");
   const q = new URLSearchParams({
     url: state.data.image,
     action: state.pose.action,
@@ -129,7 +129,7 @@ async function ensureFonts(text) {
 }
 
 function cardText(d) {
-  return [d.name, d.world, d.job, d.guild, d.liberation?.label, "Lv.0123456789억만,전투력WORLDGUILDUNION인기도✦✧"].join("");
+  return [d.name, d.world, d.job, d.guild, d.liberation?.label, "Lv.?0123456789억만,전투력WORLDGUILD해방단계달성✦✧"].join("");
 }
 
 async function search(name) {
@@ -138,9 +138,18 @@ async function search(name) {
   try {
     const data = name === "__demo__" ? demoData() : await fetchCharacter(name);
     state.data = data;
-    await Promise.all([loadSprite(), ensureFonts(cardText(data))]);
+    state.sprite = null;
+    state.frame = null;
+    // The card still renders (text only) if the character image can't be loaded.
+    const [spriteResult] = await Promise.allSettled([loadSprite(), ensureFonts(cardText(data))]);
     fit();
-    setStatus(`${data.name} · ${data.world} · Lv.${data.level} ${data.job}${data.demo ? " (데모)" : ""}`);
+    const summary = [data.name, data.world, data.level != null ? `Lv.${data.level}` : null, data.job]
+      .filter(Boolean).join(" · ") + (data.demo ? " (데모)" : "");
+    if (spriteResult.status === "rejected") {
+      setStatus(`${summary} — ${spriteResult.reason?.message || "캐릭터 이미지를 불러오지 못했습니다."}`, true);
+    } else {
+      setStatus(summary);
+    }
     $("download").disabled = false;
     $("share").disabled = false;
     if (!data.demo) {
@@ -192,7 +201,7 @@ function syncThemeButtons() {
 }
 
 async function changePose(refit) {
-  if (!state.data) return;
+  if (!state.data?.image && !state.data?.demo) return;
   try {
     await loadSprite();
     if (refit || !state.frame) fit();
@@ -219,16 +228,6 @@ $("shape").addEventListener("change", (e) => { state.opt.shape = e.target.value;
 
 $("showGuide").checked = state.showGuide;
 $("showGuide").addEventListener("change", (e) => { state.showGuide = e.target.checked; store.set("showMask", e.target.checked); render(); });
-
-for (const cb of document.querySelectorAll("[data-field]")) {
-  const key = cb.dataset.field;
-  if (key in state.opt.fields) cb.checked = state.opt.fields[key] !== false;
-  cb.addEventListener("change", () => {
-    state.opt.fields[key] = cb.checked;
-    store.set("fields", state.opt.fields);
-    render();
-  });
-}
 
 // drag to pan, wheel to zoom
 const stage = $("stage");
@@ -291,7 +290,7 @@ function demoData() {
   return {
     demo: true, name: "단풍요정", world: "스카니아", job: "아크메이지(불,독)", level: 287,
     guild: "메이플카페", liberation: { tier: 2, key: "destiny", label: "데스티니 해방" },
-    combatPower: "123456789", unionLevel: 9150, popularity: 1234,
+    combatPower: 123456789,
   };
 }
 

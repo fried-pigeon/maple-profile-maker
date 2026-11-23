@@ -173,30 +173,43 @@ $("noWeapon").addEventListener("change", (e) => { state.pose.noWeapon = e.target
 $("flip").addEventListener("change", (e) => { state.opt.flip = e.target.checked; render(); });
 $("autoFit").addEventListener("click", () => { fit(); render(); });
 
-$("zoom").addEventListener("input", (e) => {
+// ---- zoom (slider, +/- buttons, mouse wheel, pinch all go through setZoom) ----------
+const ZOOM_MIN = 3, ZOOM_MAX = 40;
+function setZoom(z) {
   if (!state.frame) return;
-  state.frame.zoom = Number(e.target.value);
+  state.frame.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(z)));
+  $("zoom").value = state.frame.zoom;
   render();
-});
+}
+$("zoom").addEventListener("input", (e) => setZoom(Number(e.target.value)));
+$("zoomMinus").addEventListener("click", () => state.frame && setZoom(state.frame.zoom - 1));
+$("zoomPlus").addEventListener("click", () => state.frame && setZoom(state.frame.zoom + 1));
 
 $("shape").value = state.opt.shape;
 $("shape").addEventListener("change", (e) => { state.opt.shape = e.target.value; store.set("shape", e.target.value); render(); });
 
-// drag to pan, wheel to zoom
+// ---- moving the character -------------------------------------------------------
+// Mouse/pen: drag to move, wheel to zoom.
+// Touch: one finger scrolls the page as usual; two fingers move + pinch-zoom.
 const stage = $("stage");
+const cardPxPerCssPx = () => S / stage.getBoundingClientRect().width;
+function panFrom(start, dxCss, dyCss) {
+  const k = cardPxPerCssPx() / state.frame.zoom;
+  const dir = state.opt.flip ? -1 : 1;
+  state.frame.cx = start.cx - dir * dxCss * k;
+  state.frame.cy = start.cy - dyCss * k;
+}
+
 let drag = null;
 stage.addEventListener("pointerdown", (e) => {
-  if (!state.frame) return;
+  if (!state.frame || e.pointerType === "touch") return;
   drag = { x: e.clientX, y: e.clientY, cx: state.frame.cx, cy: state.frame.cy };
   stage.setPointerCapture(e.pointerId);
   stage.classList.add("dragging");
 });
 stage.addEventListener("pointermove", (e) => {
   if (!drag) return;
-  const k = S / stage.getBoundingClientRect().width / state.frame.zoom;
-  const dir = state.opt.flip ? -1 : 1;
-  state.frame.cx = drag.cx - dir * (e.clientX - drag.x) * k;
-  state.frame.cy = drag.cy - (e.clientY - drag.y) * k;
+  panFrom(drag, e.clientX - drag.x, e.clientY - drag.y);
   render();
 });
 const endDrag = () => { drag = null; stage.classList.remove("dragging"); };
@@ -205,11 +218,34 @@ stage.addEventListener("pointercancel", endDrag);
 stage.addEventListener("wheel", (e) => {
   if (!state.frame) return;
   e.preventDefault();
-  const z = Math.min(40, Math.max(3, state.frame.zoom + (e.deltaY < 0 ? 1 : -1)));
-  state.frame.zoom = z;
-  $("zoom").value = z;
+  setZoom(state.frame.zoom + (e.deltaY < 0 ? 1 : -1));
+}, { passive: false });
+
+let pinch = null;
+const twoFinger = (t) => ({
+  x: (t[0].clientX + t[1].clientX) / 2,
+  y: (t[0].clientY + t[1].clientY) / 2,
+  d: Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY) || 1,
+});
+stage.addEventListener("touchstart", (e) => {
+  if (!state.frame || e.touches.length !== 2) return;
+  e.preventDefault(); // stop the browser's own pinch-zoom / two-finger scroll
+  pinch = { ...twoFinger(e.touches), zoom: state.frame.zoom, cx: state.frame.cx, cy: state.frame.cy };
+}, { passive: false });
+stage.addEventListener("touchmove", (e) => {
+  if (!pinch || e.touches.length !== 2) return;
+  e.preventDefault();
+  const m = twoFinger(e.touches);
+  state.frame.zoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(pinch.zoom * (m.d / pinch.d))));
+  $("zoom").value = state.frame.zoom;
+  panFrom(pinch, m.x - pinch.x, m.y - pinch.y);
   render();
 }, { passive: false });
+const endPinch = (e) => { if (e.touches.length < 2) pinch = null; };
+stage.addEventListener("touchend", endPinch);
+stage.addEventListener("touchcancel", endPinch);
+// iOS Safari fires its own gesture events for pinch; keep the page from zooming.
+for (const type of ["gesturestart", "gesturechange"]) stage.addEventListener(type, (e) => e.preventDefault());
 
 // export
 function exportBlob() {
@@ -227,9 +263,22 @@ $("download").addEventListener("click", async () => {
   setTimeout(() => URL.revokeObjectURL(a.href), 5000);
 });
 
-if (navigator.canShare?.({ files: [new File([""], "x.png", { type: "image/png" })] })) {
-  $("share").hidden = false;
-  $("share").addEventListener("click", async () => {
+// On phones the share sheet is the way to put the image in the photo library
+// (iOS: "이미지 저장"), which is where KakaoTalk picks profile photos from.
+const canShareFiles = (() => {
+  try { return !!navigator.canShare?.({ files: [new File([""], "x.png", { type: "image/png" })] }); } catch { return false; }
+})();
+if (canShareFiles) {
+  const shareBtn = $("share");
+  shareBtn.hidden = false;
+  if (matchMedia("(pointer: coarse)").matches) {
+    shareBtn.textContent = "사진에 저장 · 공유";
+    shareBtn.classList.add("primary");
+    $("download").classList.remove("primary");
+    $("download").textContent = "PNG 파일로 받기";
+    shareBtn.parentElement.prepend(shareBtn);
+  }
+  shareBtn.addEventListener("click", async () => {
     const blob = await exportBlob();
     try {
       await navigator.share({ files: [new File([blob], fileName(), { type: "image/png" })] });

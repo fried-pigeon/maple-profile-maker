@@ -1,0 +1,14 @@
+{
+  "name": "maple-thumb-maker",
+  "private": true,
+  "version": "0.1.0",
+  "description": "MapleStory character profile card maker (KakaoTalk profile friendly)",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler pages dev",
+    "deploy": "wrangler pages deploy"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

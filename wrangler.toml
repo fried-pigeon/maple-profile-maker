@@ -1,0 +1,6 @@
+name = "maple-thumb-maker"
+pages_build_output_dir = "public"
+compatibility_date = "2025-11-01"
+
+# NEXON_API_KEY is a secret. Locally: put it in .dev.vars
+# On Cloudflare: Pages project > Settings > Variables and Secrets (type: Secret)

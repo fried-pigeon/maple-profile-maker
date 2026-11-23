@@ -1,0 +1,338 @@
+import { CARD_SIZE, THEMES, FONT, drawCard, autoFrame, squirclePath } from "./card.js";
+
+const $ = (id) => document.getElementById(id);
+const S = CARD_SIZE;
+const KAKAO_SHAPE_N = 3; // approximation of KakaoTalk's rounded-square icon mask
+
+const store = {
+  get(k, d) { try { const v = localStorage.getItem("mtm:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
+  set(k, v) { try { localStorage.setItem("mtm:" + k, JSON.stringify(v)); } catch {} },
+};
+
+const state = {
+  data: null,
+  sprite: null,
+  frame: null,
+  opt: {
+    theme: store.get("theme", "sky"),
+    safe: store.get("safe", 0.8),
+    shape: store.get("shape", "squircle"),
+    flip: false,
+    fields: store.get("fields", { union: false, popularity: false }),
+  },
+  pose: { action: "A00", emotion: "E00", noWeapon: false },
+  showGuide: store.get("showGuide", true),
+};
+
+const cardCanvas = $("card");
+const ctx = cardCanvas.getContext("2d");
+const guideCtx = $("guide").getContext("2d");
+
+// ---- rendering --------------------------------------------------------------
+
+let raf = 0;
+function render() {
+  cancelAnimationFrame(raf);
+  raf = requestAnimationFrame(() => {
+    drawCard(ctx, state);
+    drawGuide();
+    drawIcons();
+    $("zoomOut").textContent = state.frame ? `${state.frame.zoom}배` : "";
+    $("safeOut").textContent = `${Math.round(state.opt.safe * 100)}%`;
+  });
+}
+
+function drawGuide() {
+  guideCtx.clearRect(0, 0, S, S);
+  if (!state.showGuide) return;
+  const r = (S * state.opt.safe) / 2;
+  guideCtx.save();
+  guideCtx.fillStyle = "rgba(20, 24, 36, 0.28)";
+  guideCtx.beginPath();
+  guideCtx.rect(0, 0, S, S);
+  squirclePath(guideCtx, S / 2, S / 2, r, KAKAO_SHAPE_N);
+  guideCtx.fill("evenodd");
+  squirclePath(guideCtx, S / 2, S / 2, r, KAKAO_SHAPE_N);
+  guideCtx.setLineDash([18, 12]);
+  guideCtx.lineWidth = 4;
+  guideCtx.strokeStyle = "rgba(255,255,255,0.95)";
+  guideCtx.stroke();
+  guideCtx.restore();
+}
+
+function drawIcons() {
+  const zone = S * state.opt.safe;
+  const off = (S - zone) / 2;
+  for (const id of ["icon1", "icon2", "icon3"]) {
+    const c = $(id);
+    const g = c.getContext("2d");
+    const n = c.width;
+    g.clearRect(0, 0, n, n);
+    g.save();
+    squirclePath(g, n / 2, n / 2, n / 2, KAKAO_SHAPE_N);
+    g.clip();
+    g.imageSmoothingEnabled = true;
+    g.imageSmoothingQuality = "high";
+    g.drawImage(cardCanvas, off, off, zone, zone, 0, 0, n, n);
+    g.restore();
+  }
+  for (const el of document.querySelectorAll(".fname")) el.textContent = state.data?.name || "캐릭터";
+}
+
+// ---- data loading -----------------------------------------------------------
+
+function setStatus(msg, isError = false) {
+  const el = $("status");
+  el.textContent = msg;
+  el.classList.toggle("error", isError);
+}
+
+async function fetchCharacter(name) {
+  const res = await fetch(`/api/character?name=${encodeURIComponent(name)}`);
+  const body = await res.json().catch(() => null);
+  if (!res.ok) throw new Error(body?.error?.message || `요청 실패 (${res.status})`);
+  return body;
+}
+
+function loadImage(src) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("캐릭터 이미지를 불러오지 못했습니다."));
+    img.src = src;
+  });
+}
+
+async function loadSprite() {
+  if (!state.data) return;
+  if (state.data.demo) {
+    state.sprite = makeDemoSprite(state.pose);
+    return;
+  }
+  const q = new URLSearchParams({
+    url: state.data.image,
+    action: state.pose.action,
+    emotion: state.pose.emotion,
+    wmotion: state.pose.noWeapon ? "W04" : "W00",
+  });
+  state.sprite = await loadImage(`/api/image?${q}`);
+}
+
+async function ensureFonts(text) {
+  try {
+    await Promise.all([
+      document.fonts.load(`800 40px ${FONT}`, text),
+      document.fonts.load(`700 40px ${FONT}`, text),
+      document.fonts.load(`600 40px ${FONT}`, text),
+    ]);
+  } catch {}
+}
+
+function cardText(d) {
+  return [d.name, d.world, d.job, d.guild, d.liberation?.label, "Lv.0123456789억만,전투력WORLDGUILDUNION인기도✦✧"].join("");
+}
+
+async function search(name) {
+  $("searchBtn").disabled = true;
+  setStatus("불러오는 중…");
+  try {
+    const data = name === "__demo__" ? demoData() : await fetchCharacter(name);
+    state.data = data;
+    await Promise.all([loadSprite(), ensureFonts(cardText(data))]);
+    fit();
+    setStatus(`${data.name} · ${data.world} · Lv.${data.level} ${data.job}${data.demo ? " (데모)" : ""}`);
+    $("download").disabled = false;
+    $("share").disabled = false;
+    if (!data.demo) {
+      const u = new URL(location.href);
+      u.searchParams.set("name", data.name);
+      history.replaceState(null, "", u);
+    }
+  } catch (e) {
+    setStatus(e.message || String(e), true);
+  } finally {
+    $("searchBtn").disabled = false;
+    render();
+  }
+}
+
+function fit() {
+  if (!state.sprite) return;
+  state.frame = autoFrame(state.sprite, S * state.opt.safe);
+  $("zoom").value = state.frame.zoom;
+}
+
+// ---- controls -----------------------------------------------------------------
+
+$("search").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const name = $("name").value.trim();
+  if (name) search(name);
+});
+
+// theme swatches
+for (const [key, t] of Object.entries(THEMES)) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "swatch";
+  b.title = t.label;
+  b.setAttribute("aria-label", `${t.label} 테마`);
+  b.style.background = `linear-gradient(135deg, ${t.bg[0]}, ${t.bg[1]} 60%, ${t.accent} 61%)`;
+  b.addEventListener("click", () => {
+    state.opt.theme = key;
+    store.set("theme", key);
+    syncThemeButtons();
+    render();
+  });
+  b.dataset.theme = key;
+  $("themes").append(b);
+}
+function syncThemeButtons() {
+  for (const b of $("themes").children) b.setAttribute("aria-pressed", String(b.dataset.theme === state.opt.theme));
+}
+
+async function changePose(refit) {
+  if (!state.data) return;
+  try {
+    await loadSprite();
+    if (refit || !state.frame) fit();
+  } catch (e) {
+    setStatus(e.message, true);
+  }
+  render();
+}
+
+$("action").addEventListener("change", (e) => { state.pose.action = e.target.value; changePose(true); });
+$("emotion").addEventListener("change", (e) => { state.pose.emotion = e.target.value; changePose(false); });
+$("noWeapon").addEventListener("change", (e) => { state.pose.noWeapon = e.target.checked; changePose(true); });
+$("flip").addEventListener("change", (e) => { state.opt.flip = e.target.checked; render(); });
+$("autoFit").addEventListener("click", () => { fit(); render(); });
+
+$("zoom").addEventListener("input", (e) => {
+  if (!state.frame) return;
+  state.frame.zoom = Number(e.target.value);
+  render();
+});
+
+$("safe").value = Math.round(state.opt.safe * 100);
+$("safe").addEventListener("input", (e) => {
+  state.opt.safe = Number(e.target.value) / 100;
+  store.set("safe", state.opt.safe);
+  render();
+});
+$("safe").addEventListener("change", () => { fit(); render(); });
+
+$("shape").value = state.opt.shape;
+$("shape").addEventListener("change", (e) => { state.opt.shape = e.target.value; store.set("shape", e.target.value); render(); });
+
+$("showGuide").checked = state.showGuide;
+$("showGuide").addEventListener("change", (e) => { state.showGuide = e.target.checked; store.set("showGuide", e.target.checked); render(); });
+
+for (const cb of document.querySelectorAll("[data-field]")) {
+  const key = cb.dataset.field;
+  if (key in state.opt.fields) cb.checked = state.opt.fields[key] !== false;
+  cb.addEventListener("change", () => {
+    state.opt.fields[key] = cb.checked;
+    store.set("fields", state.opt.fields);
+    render();
+  });
+}
+
+// drag to pan, wheel to zoom
+const stage = $("stage");
+let drag = null;
+stage.addEventListener("pointerdown", (e) => {
+  if (!state.frame) return;
+  drag = { x: e.clientX, y: e.clientY, cx: state.frame.cx, cy: state.frame.cy };
+  stage.setPointerCapture(e.pointerId);
+  stage.classList.add("dragging");
+});
+stage.addEventListener("pointermove", (e) => {
+  if (!drag) return;
+  const k = S / stage.getBoundingClientRect().width / state.frame.zoom;
+  const dir = state.opt.flip ? -1 : 1;
+  state.frame.cx = drag.cx - dir * (e.clientX - drag.x) * k;
+  state.frame.cy = drag.cy - (e.clientY - drag.y) * k;
+  render();
+});
+const endDrag = () => { drag = null; stage.classList.remove("dragging"); };
+stage.addEventListener("pointerup", endDrag);
+stage.addEventListener("pointercancel", endDrag);
+stage.addEventListener("wheel", (e) => {
+  if (!state.frame) return;
+  e.preventDefault();
+  const z = Math.min(40, Math.max(3, state.frame.zoom + (e.deltaY < 0 ? 1 : -1)));
+  state.frame.zoom = z;
+  $("zoom").value = z;
+  render();
+}, { passive: false });
+
+// export
+function exportBlob() {
+  drawCard(ctx, state); // make sure the canvas is current
+  return new Promise((r) => cardCanvas.toBlob(r, "image/png"));
+}
+const fileName = () => `maple-${state.data?.name || "card"}.png`;
+
+$("download").addEventListener("click", async () => {
+  const blob = await exportBlob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = fileName();
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+});
+
+if (navigator.canShare?.({ files: [new File([""], "x.png", { type: "image/png" })] })) {
+  $("share").hidden = false;
+  $("share").addEventListener("click", async () => {
+    const blob = await exportBlob();
+    try {
+      await navigator.share({ files: [new File([blob], fileName(), { type: "image/png" })] });
+    } catch {}
+  });
+}
+
+// ---- demo mode (no API key needed): ?demo -----------------------------------------
+
+function demoData() {
+  return {
+    demo: true, name: "단풍요정", world: "스카니아", job: "아크메이지(불,독)", level: 287,
+    guild: "메이플카페", liberation: { tier: 2, key: "destiny", label: "데스티니 해방" },
+    combatPower: "123456789", unionLevel: 9150, popularity: 1234,
+  };
+}
+
+// Tiny procedural chibi sprite (96x96) for layout testing without the API.
+function makeDemoSprite({ emotion, noWeapon }) {
+  const c = document.createElement("canvas");
+  c.width = 96; c.height = 96;
+  const g = c.getContext("2d");
+  const px = (x, y, w, h, col) => { g.fillStyle = col; g.fillRect(x, y, w, h); };
+  if (!noWeapon) px(66, 34, 3, 44, "#8a5a2b"), px(63, 30, 9, 8, "#4fb3ff");
+  px(37, 69, 8, 14, "#2b3550"); px(49, 69, 8, 14, "#2b3550");     // legs
+  px(35, 82, 11, 4, "#3a2a20"); px(48, 82, 11, 4, "#3a2a20");     // shoes
+  px(33, 51, 28, 20, "#e8eef9"); px(33, 51, 28, 4, "#7b8cff");    // body
+  px(28, 53, 6, 14, "#f6d3b8"); px(60, 53, 6, 14, "#f6d3b8");     // arms
+  px(29, 20, 36, 32, "#f6d3b8");                                   // face
+  px(26, 12, 42, 14, "#ff9d5c"); px(26, 12, 8, 30, "#ff9d5c"); px(60, 12, 8, 30, "#ff9d5c"); // hair
+  px(31, 8, 32, 6, "#ffb37f");
+  const eye = emotion === "E01" ? [px(37, 34, 6, 2, "#2a2230"), px(52, 32, 6, 7, "#2a2230")]
+    : [px(37, 32, 6, 7, "#2a2230"), px(52, 32, 6, 7, "#2a2230"), px(38, 33, 2, 2, "#fff"), px(53, 33, 2, 2, "#fff")];
+  void eye;
+  px(44, 43, 6, emotion === "E02" ? 3 : 2, "#c0505a");
+  px(33, 40, 4, 2, "#ffb0b0"); px(57, 40, 4, 2, "#ffb0b0");
+  return c;
+}
+
+// ---- boot -------------------------------------------------------------------------
+
+syncThemeButtons();
+render();
+const params = new URLSearchParams(location.search);
+if (params.has("demo")) {
+  search("__demo__");
+} else if (params.get("name")) {
+  $("name").value = params.get("name");
+  search(params.get("name"));
+}

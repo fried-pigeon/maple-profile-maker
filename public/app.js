@@ -59,7 +59,14 @@ function loadImage(src) {
   });
 }
 
+// Searches and pose changes can overlap (a slow image, a quick second search). Each one
+// takes a ticket; a result whose ticket is no longer the latest is dropped, so an older
+// image can never land on a newer card.
+let searchSeq = 0;
+let spriteSeq = 0;
+
 async function loadSprite() {
+  const seq = ++spriteSeq;
   if (!state.data) return;
   if (state.data.demo) {
     state.sprite = makeDemoSprite(state.pose);
@@ -72,7 +79,8 @@ async function loadSprite() {
     emotion: state.pose.emotion,
     wmotion: state.pose.noWeapon ? "W04" : "W00",
   });
-  state.sprite = await loadImage(`/api/image?${q}`);
+  const img = await loadImage(`/api/image?${q}`);
+  if (seq === spriteSeq) state.sprite = img;
 }
 
 async function ensureFonts(text) {
@@ -90,15 +98,18 @@ function cardText(d) {
 }
 
 async function search(name) {
+  const seq = ++searchSeq;
   $("searchBtn").disabled = true;
   setStatus("불러오는 중…");
   try {
     const data = name === "__demo__" ? demoData() : await fetchCharacter(name);
+    if (seq !== searchSeq) return; // a newer search started meanwhile
     state.data = data;
     state.sprite = null;
     state.frame = null;
     // The card still renders (text only) if the character image can't be loaded.
     const [spriteResult] = await Promise.allSettled([loadSprite(), ensureFonts(cardText(data))]);
+    if (seq !== searchSeq) return;
     fit();
     if (pendingFrame && state.frame) {
       Object.assign(state.frame, pendingFrame);
@@ -120,9 +131,9 @@ async function search(name) {
       history.replaceState(null, "", u);
     }
   } catch (e) {
-    setStatus(e.message || String(e), true);
+    if (seq === searchSeq) setStatus(e.message || String(e), true);
   } finally {
-    $("searchBtn").disabled = false;
+    if (seq === searchSeq) $("searchBtn").disabled = false;
     render();
   }
 }
@@ -233,11 +244,13 @@ function syncThemeButtons() {
 
 async function changePose(refit) {
   if (!state.data?.image && !state.data?.demo) return;
+  const seq = spriteSeq + 1; // the ticket loadSprite() is about to take
   try {
     await loadSprite();
+    if (seq !== spriteSeq) return; // superseded by a newer pose change or search
     if (refit || !state.frame) fit();
   } catch (e) {
-    setStatus(e.message, true);
+    if (seq === spriteSeq) setStatus(e.message, true);
   }
   render();
 }
@@ -387,9 +400,11 @@ function makeDemoSprite({ emotion, noWeapon }) {
   px(29, 20, 36, 32, "#f6d3b8");                                   // face
   px(26, 12, 42, 14, "#ff9d5c"); px(26, 12, 8, 30, "#ff9d5c"); px(60, 12, 8, 30, "#ff9d5c"); // hair
   px(31, 8, 32, 6, "#ffb37f");
-  const eye = emotion === "E01" ? [px(37, 34, 6, 2, "#2a2230"), px(52, 32, 6, 7, "#2a2230")]
-    : [px(37, 32, 6, 7, "#2a2230"), px(52, 32, 6, 7, "#2a2230"), px(38, 33, 2, 2, "#fff"), px(53, 33, 2, 2, "#fff")];
-  void eye;
+  if (emotion === "E01") {                                         // eyes (wink)
+    px(37, 34, 6, 2, "#2a2230"); px(52, 32, 6, 7, "#2a2230");
+  } else {
+    px(37, 32, 6, 7, "#2a2230"); px(52, 32, 6, 7, "#2a2230"); px(38, 33, 2, 2, "#fff"); px(53, 33, 2, 2, "#fff");
+  }
   px(44, 43, 6, emotion === "E02" ? 3 : 2, "#c0505a");
   px(33, 40, 4, 2, "#ffb0b0"); px(57, 40, 4, 2, "#ffb0b0");
   return c;

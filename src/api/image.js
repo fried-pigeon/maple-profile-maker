@@ -7,7 +7,7 @@ const ACTION_RE = /^A(0\d|[1-3]\d|4[01])(\.\d)?$/;
 const EMOTION_RE = /^E(0\d|1\d|2[0-4])(\.\d)?$/;
 const WMOTION_RE = /^W0[0-4]$/;
 
-export async function handleImage(request, env, ctx) {
+export async function handleImage(request, _env, ctx) {
   const q = new URL(request.url).searchParams;
   const src = q.get("url") || "";
   if (!src.startsWith(IMAGE_PREFIX) || /[?#]/.test(src) || src.length > 4096) {
@@ -21,9 +21,8 @@ export async function handleImage(request, env, ctx) {
   }
 
   return withEdgeCache(request, ctx, 3600, async () => {
-    const headers = {};
-    if (env.NEXON_API_KEY) headers["x-nxopen-api-key"] = env.NEXON_API_KEY;
-    const res = await fetch(upstream, { headers });
+    // The look image is public; don't send the API key (it could follow a redirect).
+    const res = await fetch(upstream);
     const type = res.headers.get("content-type") || "";
     if (!res.ok || !type.startsWith("image/")) {
       return json({ error: { code: "IMAGE_" + res.status, message: "캐릭터 이미지를 불러오지 못했습니다." } }, 502, {

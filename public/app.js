@@ -1,8 +1,7 @@
-import { CARD_SIZE, THEMES, FONT, drawCard, autoFrame, squirclePath } from "./card.js";
+import { CARD_SIZE, THEMES, FONT, KAKAO_MASK_N, PORTRAIT_ZONE, drawCard, autoFrame, squirclePath } from "./card.js";
 
 const $ = (id) => document.getElementById(id);
 const S = CARD_SIZE;
-const KAKAO_SHAPE_N = 3; // approximation of KakaoTalk's rounded-square icon mask
 
 const store = {
   get(k, d) { try { const v = localStorage.getItem("mtm:" + k); return v == null ? d : JSON.parse(v); } catch { return d; } },
@@ -15,13 +14,12 @@ const state = {
   frame: null,
   opt: {
     theme: store.get("theme", "sky"),
-    safe: store.get("safe", 0.8),
     shape: store.get("shape", "squircle"),
     flip: false,
     fields: store.get("fields", { union: false, popularity: false }),
   },
   pose: { action: "A00", emotion: "E00", noWeapon: false },
-  showGuide: store.get("showGuide", true),
+  showGuide: store.get("showMask", false),
 };
 
 const cardCanvas = $("card");
@@ -38,21 +36,24 @@ function render() {
     drawGuide();
     drawIcons();
     $("zoomOut").textContent = state.frame ? `${state.frame.zoom}배` : "";
-    $("safeOut").textContent = `${Math.round(state.opt.safe * 100)}%`;
   });
 }
 
+// Dim what KakaoTalk's icon mask hides (the four corners).
 function drawGuide() {
   guideCtx.clearRect(0, 0, S, S);
   if (!state.showGuide) return;
-  const r = (S * state.opt.safe) / 2;
+  const r = S / 2;
   guideCtx.save();
-  guideCtx.fillStyle = "rgba(20, 24, 36, 0.28)";
-  guideCtx.beginPath();
-  guideCtx.rect(0, 0, S, S);
-  squirclePath(guideCtx, S / 2, S / 2, r, KAKAO_SHAPE_N);
-  guideCtx.fill("evenodd");
-  squirclePath(guideCtx, S / 2, S / 2, r, KAKAO_SHAPE_N);
+  guideCtx.fillStyle = "rgba(20, 24, 36, 0.45)";
+  guideCtx.fillRect(0, 0, S, S);
+  // punch out the visible icon area
+  guideCtx.globalCompositeOperation = "destination-out";
+  squirclePath(guideCtx, S / 2, S / 2, r, KAKAO_MASK_N);
+  guideCtx.fillStyle = "#000"; // must be opaque to erase fully
+  guideCtx.fill();
+  guideCtx.globalCompositeOperation = "source-over";
+  squirclePath(guideCtx, S / 2, S / 2, r - 2, KAKAO_MASK_N);
   guideCtx.setLineDash([18, 12]);
   guideCtx.lineWidth = 4;
   guideCtx.strokeStyle = "rgba(255,255,255,0.95)";
@@ -60,20 +61,19 @@ function drawGuide() {
   guideCtx.restore();
 }
 
+// KakaoTalk icon = the whole image under the superellipse mask.
 function drawIcons() {
-  const zone = S * state.opt.safe;
-  const off = (S - zone) / 2;
   for (const id of ["icon1", "icon2", "icon3"]) {
     const c = $(id);
     const g = c.getContext("2d");
     const n = c.width;
     g.clearRect(0, 0, n, n);
     g.save();
-    squirclePath(g, n / 2, n / 2, n / 2, KAKAO_SHAPE_N);
+    squirclePath(g, n / 2, n / 2, n / 2, KAKAO_MASK_N);
     g.clip();
     g.imageSmoothingEnabled = true;
     g.imageSmoothingQuality = "high";
-    g.drawImage(cardCanvas, off, off, zone, zone, 0, 0, n, n);
+    g.drawImage(cardCanvas, 0, 0, S, S, 0, 0, n, n);
     g.restore();
   }
   for (const el of document.querySelectorAll(".fname")) el.textContent = state.data?.name || "캐릭터";
@@ -158,7 +158,7 @@ async function search(name) {
 
 function fit() {
   if (!state.sprite) return;
-  state.frame = autoFrame(state.sprite, S * state.opt.safe);
+  state.frame = autoFrame(state.sprite, S * PORTRAIT_ZONE);
   $("zoom").value = state.frame.zoom;
 }
 
@@ -214,19 +214,11 @@ $("zoom").addEventListener("input", (e) => {
   render();
 });
 
-$("safe").value = Math.round(state.opt.safe * 100);
-$("safe").addEventListener("input", (e) => {
-  state.opt.safe = Number(e.target.value) / 100;
-  store.set("safe", state.opt.safe);
-  render();
-});
-$("safe").addEventListener("change", () => { fit(); render(); });
-
 $("shape").value = state.opt.shape;
 $("shape").addEventListener("change", (e) => { state.opt.shape = e.target.value; store.set("shape", e.target.value); render(); });
 
 $("showGuide").checked = state.showGuide;
-$("showGuide").addEventListener("change", (e) => { state.showGuide = e.target.checked; store.set("showGuide", e.target.checked); render(); });
+$("showGuide").addEventListener("change", (e) => { state.showGuide = e.target.checked; store.set("showMask", e.target.checked); render(); });
 
 for (const cb of document.querySelectorAll("[data-field]")) {
   const key = cb.dataset.field;

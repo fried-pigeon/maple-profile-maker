@@ -1,8 +1,16 @@
 // Card renderer: draws a square profile card onto a canvas.
-// Layout is built around a centered "icon safe zone" (what KakaoTalk shows as the
-// round-ish profile icon). The character bust fills that zone; text lives outside it.
+// KakaoTalk uses the whole image as the icon (corners masked off), so the bust fills the
+// center, name/level pills stay inside the mask, and extra info sits in the hidden corners.
 
 export const CARD_SIZE = 1080;
+
+// KakaoTalk shows the WHOLE square image as the profile icon, under a superellipse mask
+// that touches all four edges (measured from a real screenshot: |x|^2.5 + |y|^2.5 = r^2.5).
+// Only the four corners are hidden, so corner info appears in the full-size view only.
+export const KAKAO_MASK_N = 2.5;
+
+// Size of the region the bust is framed for (portrait panel ≈ this + 3%).
+export const PORTRAIT_ZONE = 0.8;
 
 export const THEMES = {
   sky:      { label: "하늘",   bg: ["#eef7ff", "#cfe5ff"], panel: ["#ffffff", "#e4f1ff"], accent: "#3b78d8", ink: "#1b2a46", sub: "#5a6f92" },
@@ -127,12 +135,12 @@ export function autoFrame(sprite, zoneSize) {
  *   p.data    character info (see /api/character)
  *   p.sprite  HTMLImageElement | HTMLCanvasElement (character look) or null
  *   p.frame   { zoom, cx, cy }
- *   p.opt     { theme, safe, shape, flip, fields: {world, liberation, guild, combatPower, union, popularity, job} }
+ *   p.opt     { theme, shape, flip, fields: {world, liberation, guild, combatPower, union, popularity, job} }
  */
 export function drawCard(ctx, { data, sprite, frame, opt }) {
   const S = CARD_SIZE;
   const t = THEMES[opt.theme] || THEMES.sky;
-  const zone = S * opt.safe;            // icon safe zone (diameter)
+  const zone = S * PORTRAIT_ZONE;       // area the bust is framed for
   const P = zone + S * 0.03;            // portrait panel a bit larger than the zone
   const C = S / 2;
   const shapeN = opt.shape === "circle" ? 2 : 4;
@@ -245,7 +253,7 @@ export function drawCard(ctx, { data, sprite, frame, opt }) {
     const lv = `Lv.${data.level ?? "?"}`;
     const job = f.job !== false && data.job ? data.job : "";
     let size = Math.min(46, band * 0.48 + 10);
-    const maxW = S * 0.5;
+    const maxW = S * 0.42; // keep the pill inside the icon mask
     const measure = () => {
       ctx.font = font(800, size);
       let w = ctx.measureText(lv).width;
@@ -278,16 +286,14 @@ export function drawCard(ctx, { data, sprite, frame, opt }) {
   }
 
   // Corners ----------------------------------------------------------------
-  const cornerW = S * 0.27;
-
-  // top-left: world
+  // Each tag is sized to sit entirely inside the corner that KakaoTalk's icon mask hides,
+  // so the icon stays clean and the info shows only in the full-size profile view.
   if (f.world !== false && data.world) {
-    tag(ctx, { x: edge, y: edge, align: "left", label: "WORLD", value: data.world, t, maxW: cornerW });
+    cornerTag(ctx, { corner: "tl", label: "WORLD", value: data.world, t });
   }
-
-  // top-right: liberation badge
   if (f.liberation !== false && data.liberation) {
-    libBadge(ctx, { x: S - edge, y: edge, data: data.liberation, maxW: cornerW, t });
+    const lib = LIBERATION_TAG[data.liberation.key];
+    if (lib) cornerTag(ctx, { corner: "tr", ...lib, t, style: LIBERATION_STYLE[data.liberation.key] });
   }
 
   // bottom corners: first two enabled extras
@@ -298,97 +304,76 @@ export function drawCard(ctx, { data, sprite, frame, opt }) {
   if (f.union !== false && data.unionLevel) extras.push({ label: "UNION", value: Number(data.unionLevel).toLocaleString("ko-KR") });
   if (f.popularity !== false && data.popularity != null) extras.push({ label: "인기도", value: Number(data.popularity).toLocaleString("ko-KR") });
   const [bl, br] = extras;
-  if (bl) tag(ctx, { x: edge, y: S - edge, align: "left", valign: "bottom", ...bl, t, maxW: cornerW });
-  if (br) tag(ctx, { x: S - edge, y: S - edge, align: "right", valign: "bottom", ...br, t, maxW: cornerW });
+  if (bl) cornerTag(ctx, { corner: "bl", ...bl, t });
+  if (br) cornerTag(ctx, { corner: "br", ...br, t });
 
   ctx.restore();
 }
 
-// Small two-line label block for the corners.
-function tag(ctx, { x, y, align, valign = "top", label, value, t, maxW }) {
-  const labelSize = 22;
-  const valueSize = fitFont(ctx, value, 800, 36, maxW - 36, 20);
+const LIBERATION_TAG = {
+  genesis:  { label: "✦ 해방",     value: "제네시스" },
+  destiny:  { label: "✦ 1차 해방", value: "데스티니" },
+  destiny2: { label: "✧ 2차 초월", value: "데스티니" },
+};
+
+const CORNER_EDGE = 14;   // distance from the card edge
+const CORNER_H = 70;      // tag height
+const CORNER_SLACK = 6;   // keep this far outside the mask
+
+// Widest box (anchored at a corner, CORNER_EDGE from both edges, height h) whose inner
+// corner still lies outside the KakaoTalk icon mask.
+export function maxCornerWidth(S = CARD_SIZE, h = CORNER_H, e = CORNER_EDGE) {
+  const r = S / 2;
+  const n = KAKAO_MASK_N;
+  const v = (r - e - h - CORNER_SLACK) / r;
+  const u = Math.pow(1 - Math.pow(Math.max(0, v), n), 1 / n);
+  return Math.floor(r - e - r * u - CORNER_SLACK);
+}
+
+// Small two-line label block that fits inside a hidden corner.
+function cornerTag(ctx, { corner, label, value, t, style }) {
+  const S = CARD_SIZE;
+  const h = CORNER_H;
+  const maxW = maxCornerWidth(S, h);
+  const padX = 16;
+  const labelSize = fitFont(ctx, label, 700, 18, maxW - padX * 2, 12);
+  const valueSize = fitFont(ctx, value, 800, 30, maxW - padX * 2, 14);
   ctx.font = font(800, valueSize);
   const vw = ctx.measureText(value).width;
   ctx.font = font(700, labelSize);
   const lw = ctx.measureText(label).width;
-  const w = Math.max(vw, lw) + 36;
-  const h = labelSize + valueSize + 34;
-  const bx = align === "left" ? x : x - w;
-  const by = valign === "top" ? y : y - h;
+  const w = Math.min(maxW, Math.max(vw, lw) + padX * 2);
+  const left = corner[1] === "l";
+  const top = corner[0] === "t";
+  const bx = left ? CORNER_EDGE : S - CORNER_EDGE - w;
+  const by = top ? CORNER_EDGE : S - CORNER_EDGE - h;
 
-  roundRectPath(ctx, bx, by, w, h, 22);
   ctx.save();
-  ctx.shadowColor = hexA(t.ink, 0.12);
-  ctx.shadowBlur = 14;
-  ctx.shadowOffsetY = 4;
-  ctx.fillStyle = "rgba(255,255,255,0.88)";
+  roundRectPath(ctx, bx, by, w, h, 18);
+  ctx.shadowColor = style ? hexA(style.colors[0], 0.4) : hexA(t.ink, 0.12);
+  ctx.shadowBlur = 12;
+  ctx.shadowOffsetY = 3;
+  if (style) {
+    const g = ctx.createLinearGradient(bx, by, bx + w, by + h);
+    g.addColorStop(0, style.colors[0]);
+    g.addColorStop(1, style.colors[1]);
+    ctx.fillStyle = g;
+  } else {
+    ctx.fillStyle = "rgba(255,255,255,0.9)";
+  }
   ctx.fill();
   ctx.restore();
 
-  const tx = align === "left" ? bx + 18 : bx + w - 18;
-  ctx.textAlign = align;
+  const tx = left ? bx + padX : bx + w - padX;
+  const gap = (h - labelSize - valueSize) / 3;
+  ctx.textAlign = left ? "left" : "right";
   ctx.textBaseline = "top";
   ctx.font = font(700, labelSize);
-  ctx.fillStyle = t.accent;
-  ctx.fillText(label, tx, by + 14);
+  ctx.fillStyle = style ? hexA(style.text, 0.85) : t.accent;
+  ctx.fillText(label, tx, by + gap);
   ctx.font = font(800, valueSize);
-  ctx.fillStyle = t.ink;
-  ctx.fillText(value, tx, by + 14 + labelSize + 6);
-}
-
-function libBadge(ctx, { x, y, data, maxW, t }) {
-  const st = LIBERATION_STYLE[data.key] || LIBERATION_STYLE.genesis;
-  const text = data.label;
-  const size = fitFont(ctx, text, 800, 32, maxW - 70, 20);
-  ctx.font = font(800, size);
-  const tw = ctx.measureText(text).width;
-  const glyphSize = size * 1.1;
-  const w = tw + glyphSize + 52;
-  const h = size + 40;
-  const bx = x - w;
-
-  ctx.save();
-  roundRectPath(ctx, bx, y, w, h, h / 2);
-  ctx.shadowColor = hexA(st.colors[0], 0.45);
-  ctx.shadowBlur = 18;
-  ctx.shadowOffsetY = 5;
-  const g = ctx.createLinearGradient(bx, y, bx + w, y + h);
-  g.addColorStop(0, st.colors[0]);
-  g.addColorStop(1, st.colors[1]);
-  ctx.fillStyle = g;
-  ctx.fill();
-  ctx.restore();
-
-  // glossy highlight
-  ctx.save();
-  roundRectPath(ctx, bx, y, w, h, h / 2);
-  ctx.clip();
-  const gl = ctx.createLinearGradient(0, y, 0, y + h);
-  gl.addColorStop(0, "rgba(255,255,255,0.35)");
-  gl.addColorStop(0.5, "rgba(255,255,255,0)");
-  ctx.fillStyle = gl;
-  ctx.fillRect(bx, y, w, h);
-  ctx.restore();
-
-  ctx.textBaseline = "middle";
-  ctx.textAlign = "left";
-  ctx.fillStyle = st.text;
-  ctx.font = font(800, glyphSize);
-  ctx.fillText(st.glyph, bx + 22, y + h / 2 + 2);
-  ctx.font = font(800, size);
-  ctx.fillText(text, bx + 22 + glyphSize + 6, y + h / 2 + size * 0.04);
-
-  // tier pips for destiny 2nd transcendence
-  if (data.tier === 3) {
-    ctx.fillStyle = st.text;
-    for (let i = 0; i < 2; i++) {
-      ctx.beginPath();
-      ctx.arc(bx + w / 2 - 7 + i * 14, y + h + 10, 4, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  void t;
+  ctx.fillStyle = style ? style.text : t.ink;
+  ctx.fillText(value, tx, by + gap * 2 + labelSize - 1);
 }
 
 function pill(ctx, x, y, w, h, fill, shadow) {

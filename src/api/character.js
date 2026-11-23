@@ -22,7 +22,11 @@ export async function handleCharacter(request, env, ctx) {
 
   return withEdgeCache(request, ctx, 600, async () => {
     try {
-      const { ocid } = await nexonGet(env, "/maplestory/v1/id", { character_name: name });
+      // The id endpoint answers an unknown name with OPENAPI00004 (bad parameter), not 00003.
+      const { ocid } = await nexonGet(env, "/maplestory/v1/id", { character_name: name }).catch((err) => {
+        if (err instanceof NexonError && err.code === "OPENAPI00004") throw new NexonError("OPENAPI00003", 404);
+        throw err;
+      });
       if (!ocid) throw new NexonError("OPENAPI00003", 404);
 
       // basic is required; the rest are best-effort extras.

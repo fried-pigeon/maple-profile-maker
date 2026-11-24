@@ -62,6 +62,15 @@
       <fieldset>
         <legend>테마</legend>
         <div id="themes" class="swatches"></div>
+        <div id="customColor" class="custom-color" hidden>
+          <canvas id="hueRing" width="360" height="360" tabindex="0" role="slider"
+                  aria-label="색조" aria-valuemin="0" aria-valuemax="359"></canvas>
+          <div class="tones" role="radiogroup" aria-label="진하기">
+            <button type="button" role="radio" data-tone="0">연하게</button>
+            <button type="button" role="radio" data-tone="1">기본</button>
+            <button type="button" role="radio" data-tone="2">선명하게</button>
+          </div>
+        </div>
       </fieldset>
 
       <fieldset>

@@ -2,6 +2,8 @@
 // KakaoTalk uses the whole image as the icon (corners masked off), so the bust fills the
 // center, name/level pills stay inside the mask, and extra info sits in the hidden corners.
 
+import { makeCustomTheme, parseCustomThemeId } from "./color.js";
+
 export const CARD_SIZE = 1080;
 
 // KakaoTalk shows the WHOLE square image as the profile icon, under a superellipse mask
@@ -21,6 +23,13 @@ export const THEMES = {
   sakura:   { label: "벚꽃",   bg: ["#fff3f7", "#ffd3e3"], panel: ["#ffffff", "#ffeaf2"], accent: "#dc5689", ink: "#43172a", sub: "#8f5670" },
   cloud:    { label: "구름",   bg: ["#fbfbfd", "#e6e9f0"], panel: ["#ffffff", "#f3f5f9"], accent: "#4a5468", ink: "#1e2330", sub: "#6b7385" },
 };
+
+/** Theme for an id: a preset key ("sky") or a custom color id ("c205.1", see color.js). */
+export function resolveTheme(id) {
+  if (THEMES[id]) return THEMES[id];
+  const custom = parseCustomThemeId(id);
+  return custom ? makeCustomTheme(custom.hue, custom.tone) : THEMES.sky;
+}
 
 const LIBERATION_STYLE = {
   genesis:  { colors: ["#ff6a3d", "#ffb347"], text: "#ffffff", glyph: "✦" },
@@ -143,7 +152,7 @@ export function autoFrame(sprite, zoneSize) {
  */
 export function drawCard(ctx, { data, sprite, frame, opt }) {
   const S = CARD_SIZE;
-  const t = THEMES[opt.theme] || THEMES.sky;
+  const t = resolveTheme(opt.theme);
   const zone = S * PORTRAIT_ZONE;       // area the bust is framed for
   const P = zone + S * 0.03;            // portrait panel a bit larger than the zone
   const C = S / 2;

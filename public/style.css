@@ -124,6 +124,18 @@ output { color: var(--sub); font-variant-numeric: tabular-nums; margin-left: aut
   box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.08);
 }
 .swatch[aria-pressed="true"] { border-color: var(--ink); }
+.swatch-custom { border-radius: 50%; }
+
+.custom-color { display: flex; flex-direction: column; align-items: center; gap: 12px; padding-top: 6px; }
+.custom-color[hidden] { display: none; }
+#hueRing {
+  width: 180px; height: 180px; border-radius: 50%; cursor: pointer;
+  touch-action: none; -webkit-tap-highlight-color: transparent;
+}
+#hueRing:focus-visible { outline: 3px solid var(--accent); outline-offset: 4px; }
+.tones { display: flex; gap: 6px; width: 100%; }
+.tones button { flex: 1; min-height: 40px; padding: 6px 4px; font-size: 14px; }
+.tones button[aria-checked="true"] { background: var(--ink); border-color: var(--ink); color: #fff; }
 @media (pointer: coarse) { .swatch { width: 44px; height: 44px; } }
 
 .foot { max-width: 1100px; margin: 28px auto 0; color: var(--sub); font-size: 12px; text-align: center; }

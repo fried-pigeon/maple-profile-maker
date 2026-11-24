@@ -1,4 +1,5 @@
-import { CARD_SIZE, THEMES, FONT, PORTRAIT_ZONE, drawCard, autoFrame } from "./card.js";
+import { CARD_SIZE, THEMES, FONT, PORTRAIT_ZONE, drawCard, autoFrame, resolveTheme } from "./card.js";
+import { TONE_LEVELS, accentFor, customThemeId, parseCustomThemeId } from "./color.js";
 import { detectInApp, externalOpenUrl } from "./inapp.js";
 
 const $ = (id) => document.getElementById(id);
@@ -9,12 +10,17 @@ const store = {
   set(k, v) { try { localStorage.setItem("mtm:" + k, JSON.stringify(v)); } catch {} },
 };
 
+const isThemeId = (id) => Boolean(THEMES[id] || parseCustomThemeId(id));
+const savedTheme = store.get("theme", "sky");
+
 const state = {
   data: null,
   sprite: null,
   frame: null,
+  // last color picked with the hue ring (kept even while a preset is selected)
+  custom: parseCustomThemeId(savedTheme) ?? store.get("custom", { hue: 200, tone: 1 }),
   opt: {
-    theme: store.get("theme", "sky"),
+    theme: isThemeId(savedTheme) ? savedTheme : "sky",
     shape: store.get("shape", "squircle"),
     flip: false,
   },
@@ -167,7 +173,11 @@ function stateUrl() {
 }
 
 function applyUrlState(p) {
-  if (THEMES[p.get("t")]) state.opt.theme = p.get("t");
+  if (isThemeId(p.get("t"))) {
+    state.opt.theme = p.get("t");
+    const c = parseCustomThemeId(state.opt.theme);
+    if (c) state.custom = c;
+  }
   if (["squircle", "circle"].includes(p.get("s"))) state.opt.shape = p.get("s");
   const pick = (sel, v) => (v && [...sel.options].some((o) => o.value === v) ? v : null);
   state.pose.action = pick($("action"), p.get("a")) ?? state.pose.action;
@@ -221,7 +231,19 @@ $("search").addEventListener("submit", (e) => {
   if (name) search(name);
 });
 
-// theme swatches
+// ---- themes: preset swatches + "직접 고르기" (hue ring + 3 tone levels) ------------
+function setTheme(id) {
+  state.opt.theme = id;
+  store.set("theme", id);
+  const c = parseCustomThemeId(id);
+  if (c) {
+    state.custom = c;
+    store.set("custom", c);
+  }
+  syncThemeButtons();
+  render();
+}
+
 for (const [key, t] of Object.entries(THEMES)) {
   const b = document.createElement("button");
   b.type = "button";
@@ -229,17 +251,112 @@ for (const [key, t] of Object.entries(THEMES)) {
   b.title = t.label;
   b.setAttribute("aria-label", `${t.label} 테마`);
   b.style.background = `linear-gradient(135deg, ${t.bg[0]}, ${t.bg[1]} 60%, ${t.accent} 61%)`;
-  b.addEventListener("click", () => {
-    state.opt.theme = key;
-    store.set("theme", key);
-    syncThemeButtons();
-    render();
-  });
+  b.addEventListener("click", () => setTheme(key));
   b.dataset.theme = key;
   $("themes").append(b);
 }
+const customSwatch = document.createElement("button");
+customSwatch.type = "button";
+customSwatch.className = "swatch swatch-custom";
+customSwatch.title = "직접 고르기";
+customSwatch.setAttribute("aria-label", "색 직접 고르기");
+customSwatch.addEventListener("click", () => setTheme(customThemeId(state.custom.hue, state.custom.tone)));
+$("themes").append(customSwatch);
+
+// ring colors per tone (the accent each hue would get), computed once
+const ringColors = TONE_LEVELS.map((_, tone) => Array.from({ length: 360 }, (_, h) => accentFor(h, tone)));
+const conic = (tone) => `conic-gradient(${ringColors[tone].filter((_, h) => h % 30 === 0).concat(ringColors[tone][0]).join(", ")})`;
+
 function syncThemeButtons() {
-  for (const b of $("themes").children) b.setAttribute("aria-pressed", String(b.dataset.theme === state.opt.theme));
+  const custom = parseCustomThemeId(state.opt.theme);
+  for (const b of $("themes").querySelectorAll("[data-theme]")) {
+    b.setAttribute("aria-pressed", String(b.dataset.theme === state.opt.theme));
+  }
+  customSwatch.setAttribute("aria-pressed", String(Boolean(custom)));
+  const acc = accentFor(state.custom.hue, state.custom.tone);
+  customSwatch.style.background = `radial-gradient(circle, ${acc} 0 34%, #fff 35% 42%, transparent 43%), ${conic(state.custom.tone)}`;
+  $("customColor").hidden = !custom;
+  for (const b of document.querySelectorAll(".tones button")) {
+    b.setAttribute("aria-checked", String(Number(b.dataset.tone) === state.custom.tone));
+  }
+  drawRing();
+}
+
+// hue ring: hue 0 at the top, increasing clockwise
+const ring = $("hueRing");
+const ringCtx = ring.getContext("2d");
+function drawRing() {
+  if ($("customColor").hidden) return;
+  const W = ring.width, C = W / 2, R = C - 6, r = R - 46;
+  const { hue, tone } = state.custom;
+  const t = resolveTheme(customThemeId(hue, tone));
+  ringCtx.clearRect(0, 0, W, W);
+  for (let h = 0; h < 360; h++) {
+    const a0 = ((h - 90.6) * Math.PI) / 180, a1 = ((h - 89.4 + 0.2) * Math.PI) / 180;
+    ringCtx.beginPath();
+    ringCtx.arc(C, C, R, a0, a1);
+    ringCtx.arc(C, C, r, a1, a0, true);
+    ringCtx.closePath();
+    ringCtx.fillStyle = ringColors[tone][h];
+    ringCtx.fill();
+  }
+  // center: the card background + accent this color produces
+  const g = ringCtx.createLinearGradient(C - r, C - r, C + r, C + r);
+  g.addColorStop(0, t.bg[0]);
+  g.addColorStop(1, t.bg[1]);
+  ringCtx.beginPath();
+  ringCtx.arc(C, C, r - 14, 0, Math.PI * 2);
+  ringCtx.fillStyle = g;
+  ringCtx.fill();
+  ringCtx.beginPath();
+  ringCtx.arc(C, C, 34, 0, Math.PI * 2);
+  ringCtx.fillStyle = t.accent;
+  ringCtx.fill();
+  // knob
+  const a = ((hue - 90) * Math.PI) / 180, kr = (R + r) / 2;
+  const kx = C + kr * Math.cos(a), ky = C + kr * Math.sin(a);
+  ringCtx.save();
+  ringCtx.shadowColor = "rgba(0,0,0,0.3)";
+  ringCtx.shadowBlur = 8;
+  ringCtx.beginPath();
+  ringCtx.arc(kx, ky, 26, 0, Math.PI * 2);
+  ringCtx.fillStyle = "#fff";
+  ringCtx.fill();
+  ringCtx.restore();
+  ringCtx.beginPath();
+  ringCtx.arc(kx, ky, 19, 0, Math.PI * 2);
+  ringCtx.fillStyle = ringColors[tone][hue];
+  ringCtx.fill();
+  ring.setAttribute("aria-valuenow", String(hue));
+  ring.setAttribute("aria-valuetext", `색조 ${hue}도, ${TONE_LEVELS[tone].label}`);
+}
+
+const setCustom = (hue, tone = state.custom.tone) =>
+  setTheme(customThemeId(Math.round(((hue % 360) + 360) % 360), tone));
+
+function hueFromPointer(e) {
+  const rect = ring.getBoundingClientRect();
+  const x = e.clientX - rect.left - rect.width / 2;
+  const y = e.clientY - rect.top - rect.height / 2;
+  return (Math.atan2(y, x) * 180) / Math.PI + 90;
+}
+let ringDrag = false;
+ring.addEventListener("pointerdown", (e) => {
+  ringDrag = true;
+  ring.setPointerCapture(e.pointerId);
+  setCustom(hueFromPointer(e));
+});
+ring.addEventListener("pointermove", (e) => { if (ringDrag) setCustom(hueFromPointer(e)); });
+ring.addEventListener("pointerup", () => { ringDrag = false; });
+ring.addEventListener("pointercancel", () => { ringDrag = false; });
+ring.addEventListener("keydown", (e) => {
+  const step = { ArrowRight: 5, ArrowUp: 5, ArrowLeft: -5, ArrowDown: -5, PageUp: 30, PageDown: -30 }[e.key];
+  if (step === undefined) return;
+  e.preventDefault();
+  setCustom(state.custom.hue + step);
+});
+for (const b of document.querySelectorAll(".tones button")) {
+  b.addEventListener("click", () => setCustom(state.custom.hue, Number(b.dataset.tone)));
 }
 
 async function changePose(refit) {
